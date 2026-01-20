@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Surgeon Split Calculator</title>
+  <style>
+    :root { --border:#ddd; --muted:#666; --bg:#fafafa; --card:#fff; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin: 24px; background: var(--bg); }
+    .card { max-width: 980px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+    h1 { margin: 0 0 10px 0; font-size: 18px; }
+    .subtitle { margin: 0 0 14px 0; color: var(--muted); font-size: 13px; }
+    .grid3 { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 10px; align-items: end; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .hdr { font-weight: 800; text-align: center; padding: 8px 0; font-size: 14px; }
+    .lbl { font-weight: 700; font-size: 13px; padding: 10px 4px 0 4px; }
+    label { display:block; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cfcfcf;
+      border-radius: 10px;
+      font-size: 14px;
+      background: #fff;
+      box-sizing: border-box;
+    }
+    input.readonly { background: #f3f3f3; }
+    input.money { text-align: right; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .row { margin-top: 10px; }
+    .banner {
+      display:none;
+      margin: 14px 0 6px 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #fff2f2;
+      border: 1px solid #ffb3b3;
+      color: #8a0000;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .footer {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mini { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>Surgeon Split Calculator</h1>
+    <p class="subtitle">Enter only the input fields (Start/End times + Total OR Fee). Everything else auto-calculates.</p>
+
+    <!-- Header row -->
+    <div class="grid3">
+      <div></div>
+      <div class="hdr">Surgeon A</div>
+      <div class="hdr">Surgeon B</div>
+      <div class="hdr">Total Time</div>
+    </div>
+
+    <!-- Start row -->
+    <div class="grid3 row">
+      <div class="lbl">Start</div>
+      <div>
+        <input id="aStart" placeholder="7:55 or 7:55 AM" />
+        <div class="hint">AM/PM optional (missing → AM).</div>
+      </div>
+      <div>
+        <input id="bStart" placeholder="9:35 or 9:35 AM" />
+        <div class="hint">AM/PM optional.</div>
+      </div>
+      <div>
+        <input id="tStart" class="readonly" readonly placeholder="—" />
+        <div class="hint">Not used (shown for symmetry).</div>
+      </div>
+    </div>
+
+    <!-- End row -->
+    <div class="grid3 row">
+      <div class="lbl">End</div>
+      <div><input id="aEnd" placeholder="11:25 or 11:25 AM" /></div>
+      <div><input id="bEnd" placeholder="12:12 or 12:12 PM" /></div>
+      <div><input id="tEnd" class="readonly" readonly placeholder="—" /></div>
+    </div>
+
+    <div class="banner" id="banner"></div>
+
+    <!-- Duration h:mm -->
+    <div class="grid3 row">
+      <div class="lbl">Duration (h:mm)</div>
+      <div><input id="aDurHM" class="readonly" readonly /></div>
+      <div><input id="bDurHM" class="readonly" readonly /></div>
+      <div><input id="tDurHM" class="readonly" readonly /></div>
+    </div>
+
+    <!-- Duration decimal -->
+    <div class="grid3 row">
+      <div class="lbl">Duration (decimal)</div>
+      <div><input id="aDurDec" class="readonly" readonly /></div>
+      <div><input id="bDurDec" class="readonly" readonly /></div>
+      <div><input id="tDurDec" class="readonly" readonly /></div>
+    </div>
+
+    <!-- Percentage -->
+    <div class="grid3 row">
+      <div class="lbl">Percentage</div>
+      <div><input id="aPct" class="readonly" readonly /></div>
+      <div><input id="bPct" class="readonly" readonly /></div>
+      <div><input id="tPct" class="readonly" readonly placeholder="100%" /></div>
+    </div>
+
+    <!-- Total OR Fee + Allocations -->
+    <div class="row" style="margin-top:16px;">
+      <div class="grid2">
+        <div>
+          <label>TOTAL OR FEE</label>
+          <input id="fee" class="money" placeholder="2964" />
+          <div class="hint">Numbers only (commas/$ ok).</div>
+        </div>
+        <div>
+          <label class="mini">Status</label>
+          <input id="status" class="readonly" readonly />
+          <div class="hint">Allocations freeze if times are invalid.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row grid3" style="margin-top:10px;">
+      <div class="lbl">Surgeon Allocation</div>
+      <div><input id="aAlloc" class="readonly money" readonly /></div>
+      <div><input id="bAlloc" class="readonly money" readonly /></div>
+      <div><input id="tAlloc" class="readonly money" readonly /></div>
+    </div>
+
+    <div class="footer">
+      Rules: (1) Missing AM/PM → assumed AM. (2) If End &lt; Start for either surgeon, calculations pause until fixed. (3) Allocations round to whole dollars.
+    </div>
+  </div>
+
+<script>
+  const el = (id) => document.getElementById(id);
+
+  const ids = [
+    "aStart","aEnd","bStart","bEnd","fee"
+  ];
+
+  function parseTimeToday(userStr) {
+    const s0 = (userStr || "").trim();
+    if (!s0) return null;
+
+    // If no am/pm suffix, assume AM (matching your Excel preference)
+    const hasAmPm = /\b(am|pm)\b/i.test(s0);
+    const s = hasAmPm ? s0 : (s0 + " AM");
+
+    // Parse using today's date as an anchor
+    const now = new Date();
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const d = new Date(base.toDateString() + " " + s);
+
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function minutesBetween(start, end) {
+    return Math.round((end - start) / 60000);
+  }
+
+  function fmtHM(totalMinutes) {
+    const m = Math.max(0, totalMinutes); // we only show positive durations in valid state
+    const h = Math.floor(m / 60);
+    const mm = String(m % 60).padStart(2, "0");
+    return `${h}:${mm}`;
+  }
+
+  function fmtDec(hours) {
+    if (!isFinite(hours)) return "";
+    return hours.toFixed(2);
+  }
+
+  function fmtPct(p) {
+    if (!isFinite(p)) return "";
+    return Math.round(p * 100).toString() + "%";
+  }
+
+  function fmtUSDwhole(n) {
+    if (!isFinite(n)) return "";
+    return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  }
+
+  function clearOutputs() {
+    ["aDurHM","bDurHM","tDurHM","aDurDec","bDurDec","tDurDec","aPct","bPct","aAlloc","bAlloc","tAlloc"].forEach(id => el(id).value = "");
+    el("status").value = "";
+  }
+
+  function setBanner(msg) {
+    const b = el("banner");
+    if (!msg) {
+      b.style.display = "none";
+      b.textContent = "";
+    } else {
+      b.style.display = "block";
+      b.textContent = msg;
+    }
+  }
+
+  function recompute() {
+    // Parse times
+    const aS = parseTimeToday(el("aStart").value);
+    const aE = parseTimeToday(el("aEnd").value);
+    const bS = parseTimeToday(el("bStart").value);
+    const bE = parseTimeToday(el("bEnd").value);
+
+    // Fee sanitize
+    const feeStr = (el("fee").value || "").replace(/[^0-9.]/g, "");
+    const fee = feeStr ? Number(feeStr) : 0;
+
+    // If any time field is partially missing, we compute only when each pair is present
+    // But allocations require both surgeons + total fee.
+    setBanner("");
+
+    // Validate parse
+    const badInputs = [];
+    if (el("aStart").value.trim() && !aS) badInputs.push("Surgeon A Start");
+    if (el("aEnd").value.trim() && !aE) badInputs.push("Surgeon A End");
+    if (el("bStart").value.trim() && !bS) badInputs.push("Surgeon B Start");
+    if (el("bEnd").value.trim() && !bE) badInputs.push("Surgeon B End");
+    if (el("fee").value.trim() && !(isFinite(fee) && fee >= 0)) badInputs.push("Total OR Fee");
+
+    if (badInputs.length) {
+      clearOutputs();
+      el("status").value = "Fix invalid inputs";
+      setBanner("Invalid: " + badInputs.join(", ") + ".");
+      return;
+    }
+
+    // Compute minutes if pairs exist
+    let aMin = null, bMin = null;
+    if (aS && aE) aMin = minutesBetween(aS, aE);
+    if (bS && bE) bMin = minutesBetween(bS, bE);
+
+    // Option B: Hard stop if End < Start for either surgeon (when both entered)
+    if (aMin !== null && aMin < 0) {
+      clearOutputs();
+      el("status").value = "Paused (A time error)";
+      setBanner("CHECK TIMES: Surgeon A End is earlier than Start. Fix AM/PM before calculating.");
+      return;
+    }
+    if (bMin !== null && bMin < 0) {
+      clearOutputs();
+      el("status").value = "Paused (B time error)";
+      setBanner("CHECK TIMES: Surgeon B End is earlier than Start. Fix AM/PM before calculating.");
+      return;
+    }
+
+    // Fill durations where possible
+    const aHours = (aMin !== null) ? (aMin / 60) : null;
+    const bHours = (bMin !== null) ? (bMin / 60) : null;
+    const tMin = (aMin !== null && bMin !== null) ? (aMin + bMin) : null;
+    const tHours = (tMin !== null) ? (tMin / 60) : null;
+
+    el("aDurHM").value = (aMin !== null) ? fmtHM(aMin) : "";
+    el("bDurHM").value = (bMin !== null) ? fmtHM(bMin) : "";
+    el("tDurHM").value = (tMin !== null) ? fmtHM(tMin) : "";
+
+    el("aDurDec").value = (aHours !== null) ? fmtDec(aHours) : "";
+    el("bDurDec").value = (bHours !== null) ? fmtDec(bHours) : "";
+    el("tDurDec").value = (tHours !== null) ? fmtDec(tHours) : "";
+
+    // Percentages & allocations require both surgeons durations and nonzero total
+    if (tHours !== null && tHours > 0 && aHours !== null && bHours !== null) {
+      const pctA = aHours / tHours;
+      const pctB = bHours / tHours;
+
+      el("aPct").value = fmtPct(pctA);
+      el("bPct").value = fmtPct(pctB);
+
+      const allocA = Math.round(fee * pctA);
+      const allocB = Math.round(fee * pctB);
+
+      el("aAlloc").value = fmtUSDwhole(allocA);
+      el("bAlloc").value = fmtUSDwhole(allocB);
+      el("tAlloc").value = fmtUSDwhole(fee);
+
+      el("status").value = "OK";
+    } else {
+      // Not enough info yet
+      el("aPct").value = "";
+      el("bPct").value = "";
+      el("aAlloc").value = "";
+      el("bAlloc").value = "";
+      el("tAlloc").value = fee ? fmtUSDwhole(fee) : "";
+      el("status").value = "Enter both surgeons' times to allocate";
+    }
+  }
+
+  ids.forEach(id => el(id).addEventListener("input", recompute));
+  recompute();
+</script>
+</body>
+</html>
