@@ -65,12 +65,12 @@
     <div class="grid3 row">
       <div class="lbl">Start</div>
       <div>
-        <input id="aStart" placeholder="7:55 or 7:55 AM" />
-        <div class="hint">AM/PM optional (missing → AM).</div>
+        <input id="aStart" placeholder="7:55 or 7:55 AM or 7:55p" />
+        <div class="hint">AM/PM optional (missing → AM). “p” = PM, “a” = AM.</div>
       </div>
       <div>
-        <input id="bStart" placeholder="9:35 or 9:35 AM" />
-        <div class="hint">AM/PM optional.</div>
+        <input id="bStart" placeholder="9:35 or 9:35 AM or 935p" />
+        <div class="hint">AM/PM optional. Supports shorthand “p/a”.</div>
       </div>
       <div>
         <input id="tStart" class="readonly" readonly placeholder="—" />
@@ -81,8 +81,8 @@
     <!-- End row -->
     <div class="grid3 row">
       <div class="lbl">End</div>
-      <div><input id="aEnd" placeholder="11:25 or 11:25 AM" /></div>
-      <div><input id="bEnd" placeholder="12:12 or 12:12 PM" /></div>
+      <div><input id="aEnd" placeholder="11:25 or 11:25 AM or 1125p" /></div>
+      <div><input id="bEnd" placeholder="12:12 or 12:12 PM or 1212p" /></div>
       <div><input id="tEnd" class="readonly" readonly placeholder="—" /></div>
     </div>
 
@@ -136,31 +136,102 @@
     </div>
 
     <div class="footer">
-      Rules: (1) Missing AM/PM → assumed AM. (2) If End &lt; Start for either surgeon, calculations pause until fixed. (3) Allocations round to whole dollars.
+      Rules: (1) Missing AM/PM → assumed AM. (2) You can type “p”/“P” for PM (e.g., 7:55p or 755p). (3) If End &lt; Start for either surgeon, calculations pause until fixed. (4) Allocations round to whole dollars.
     </div>
   </div>
 
 <script>
   const el = (id) => document.getElementById(id);
 
-  const ids = [
-    "aStart","aEnd","bStart","bEnd","fee"
-  ];
+  const ids = ["aStart","aEnd","bStart","bEnd","fee"];
 
-  function parseTimeToday(userStr) {
-    const s0 = (userStr || "").trim();
-    if (!s0) return null;
+  function normalizeTimeInput(raw) {
+    let s = (raw || "").trim();
+    if (!s) return { ok: true, text: "", date: null };
 
-    // If no am/pm suffix, assume AM (matching your Excel preference)
-    const hasAmPm = /\b(am|pm)\b/i.test(s0);
-    const s = hasAmPm ? s0 : (s0 + " AM");
+    // Remove spaces: "7:55 pm" -> "7:55pm"
+    s = s.replace(/\s+/g, "");
 
-    // Parse using today's date as an anchor
+    // Expand shorthand trailing 'p'/'a' to pm/am if user didn't already type am/pm
+    if (/[pP]$/.test(s) && !/(am|pm)$/i.test(s)) s = s.slice(0, -1) + "pm";
+    if (/[aA]$/.test(s) && !/(am|pm)$/i.test(s)) s = s.slice(0, -1) + "am";
+
+    // Pull suffix if present
+    let suffix = "";
+    const mSuffix = s.match(/(am|pm)$/i);
+    if (mSuffix) {
+      suffix = mSuffix[1].toUpperCase();
+      s = s.slice(0, -mSuffix[1].length);
+    }
+
+    // Parse time part
+    let hh = null, mm = null;
+
+    if (s.includes(":")) {
+      const parts = s.split(":");
+      if (parts.length !== 2) return { ok: false, text: raw, date: null };
+      hh = parts[0];
+      mm = parts[1];
+    } else {
+      // Digits-only forms: "7" "55" "735" "0735" "1234"
+      if (!/^\d+$/.test(s)) return { ok: false, text: raw, date: null };
+      if (s.length <= 2) {
+        hh = "0";
+        mm = s.padStart(2, "0");
+      } else if (s.length === 3) {
+        hh = s.slice(0, 1);
+        mm = s.slice(1);
+      } else {
+        hh = s.slice(0, -2);
+        mm = s.slice(-2);
+      }
+    }
+
+    if (hh === "" || mm === "") return { ok: false, text: raw, date: null };
+
+    const hNum = Number(hh);
+    const mNum = Number(mm);
+
+    if (!Number.isFinite(hNum) || !Number.isFinite(mNum)) return { ok: false, text: raw, date: null };
+    if (mNum < 0 || mNum > 59) return { ok: false, text: raw, date: null };
+
+    // Default AM if no suffix provided
+    if (!suffix) suffix = "AM";
+
+    // Convert to 24-hour clock based on suffix
+    let hour24;
+    if (suffix === "AM" || suffix === "PM") {
+      // Treat input as 12-hour. 12AM -> 0, 12PM -> 12
+      const h12 = (hNum % 12);
+      hour24 = (suffix === "PM") ? (h12 + 12) : h12;
+    } else {
+      // Shouldn't happen; defensive fallback
+      hour24 = hNum;
+    }
+
+    // Build date anchored to today
     const now = new Date();
-    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const d = new Date(base.toDateString() + " " + s);
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour24, mNum, 0, 0);
+    if (isNaN(d.getTime())) return { ok: false, text: raw, date: null };
 
-    return isNaN(d.getTime()) ? null : d;
+    // Pretty format: "h:mm AM/PM"
+    const fmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    const pretty = fmt.format(d).replace(/\u202f/g, " "); // normalize narrow no-break spaces
+
+    return { ok: true, text: pretty, date: d };
+  }
+
+  function parseTimeToday(str) {
+    const res = normalizeTimeInput(str);
+    return res.ok ? res.date : null;
+  }
+
+  function normalizeOnBlur(inputEl) {
+    inputEl.addEventListener("blur", () => {
+      const res = normalizeTimeInput(inputEl.value);
+      if (res.ok) inputEl.value = res.text; // rewrite to standard format (or blank)
+      // If not ok, leave as-is so user can fix it
+    });
   }
 
   function minutesBetween(start, end) {
@@ -168,7 +239,7 @@
   }
 
   function fmtHM(totalMinutes) {
-    const m = Math.max(0, totalMinutes); // we only show positive durations in valid state
+    const m = Math.max(0, totalMinutes); // valid state only
     const h = Math.floor(m / 60);
     const mm = String(m % 60).padStart(2, "0");
     return `${h}:${mm}`;
@@ -190,7 +261,8 @@
   }
 
   function clearOutputs() {
-    ["aDurHM","bDurHM","tDurHM","aDurDec","bDurDec","tDurDec","aPct","bPct","aAlloc","bAlloc","tAlloc"].forEach(id => el(id).value = "");
+    ["aDurHM","bDurHM","tDurHM","aDurDec","bDurDec","tDurDec","aPct","bPct","aAlloc","bAlloc","tAlloc"]
+      .forEach(id => el(id).value = "");
     el("status").value = "";
   }
 
@@ -206,21 +278,17 @@
   }
 
   function recompute() {
-    // Parse times
     const aS = parseTimeToday(el("aStart").value);
     const aE = parseTimeToday(el("aEnd").value);
     const bS = parseTimeToday(el("bStart").value);
     const bE = parseTimeToday(el("bEnd").value);
 
-    // Fee sanitize
     const feeStr = (el("fee").value || "").replace(/[^0-9.]/g, "");
     const fee = feeStr ? Number(feeStr) : 0;
 
-    // If any time field is partially missing, we compute only when each pair is present
-    // But allocations require both surgeons + total fee.
     setBanner("");
 
-    // Validate parse
+    // Validate parsing for non-empty fields
     const badInputs = [];
     if (el("aStart").value.trim() && !aS) badInputs.push("Surgeon A Start");
     if (el("aEnd").value.trim() && !aE) badInputs.push("Surgeon A End");
@@ -235,7 +303,7 @@
       return;
     }
 
-    // Compute minutes if pairs exist
+    // Compute minutes if both start/end exist for that surgeon
     let aMin = null, bMin = null;
     if (aS && aE) aMin = minutesBetween(aS, aE);
     if (bS && bE) bMin = minutesBetween(bS, bE);
@@ -254,7 +322,7 @@
       return;
     }
 
-    // Fill durations where possible
+    // Durations
     const aHours = (aMin !== null) ? (aMin / 60) : null;
     const bHours = (bMin !== null) ? (bMin / 60) : null;
     const tMin = (aMin !== null && bMin !== null) ? (aMin + bMin) : null;
@@ -268,7 +336,7 @@
     el("bDurDec").value = (bHours !== null) ? fmtDec(bHours) : "";
     el("tDurDec").value = (tHours !== null) ? fmtDec(tHours) : "";
 
-    // Percentages & allocations require both surgeons durations and nonzero total
+    // Percent + allocations require both surgeons durations and nonzero total
     if (tHours !== null && tHours > 0 && aHours !== null && bHours !== null) {
       const pctA = aHours / tHours;
       const pctB = bHours / tHours;
@@ -285,7 +353,6 @@
 
       el("status").value = "OK";
     } else {
-      // Not enough info yet
       el("aPct").value = "";
       el("bPct").value = "";
       el("aAlloc").value = "";
@@ -295,7 +362,12 @@
     }
   }
 
+  // Recompute on input
   ids.forEach(id => el(id).addEventListener("input", recompute));
+
+  // Normalize time fields on blur (adds AM/PM and cleans formatting; supports "p"/"a")
+  ["aStart","aEnd","bStart","bEnd"].forEach(id => normalizeOnBlur(el(id)));
+
   recompute();
 </script>
 </body>
